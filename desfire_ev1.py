@@ -99,7 +99,6 @@ def authenticate_des_key(key):
 
 
 def authenticate(connection, appid, key_number, key_value):
-    select_app(connection, appid)
     # Start authentication with key 0x00 (master key) position number 0 ( keys are ranging from 0 - 13)
     
     # Get challenge from card
@@ -144,6 +143,20 @@ def list_applications(connection):
         return aids
     return []
 
+def list_files(connection):
+    # Get file IDs command
+    apdu = [0x90, 0x6F, 0x00, 0x00, 0x00]
+    data, sw1, sw2 = connection.transmit(apdu)
+    
+    print(f"Status: {sw1:02X} {sw2:02X}")
+    
+    if sw1 == 0x91 and sw2 == 0x00:
+        file_ids = list(data)
+        print(f"Files in application: {[f'0x{fid:02X}' for fid in file_ids]}")
+        print(f"Total files: {len(file_ids)}")
+        return file_ids
+    return []
+
 def delete_application(connection, aid):
     # deletion requires auth with master app
     apdu = [0x90, 0xDA, 0x00, 0x00, 0x03] + aid + [0x00]
@@ -166,22 +179,102 @@ def create_application(connection, aid):
     return sw1 == 0x91 and sw2 == 0x00
 
 
-list_applications(connection)
-aid = [0x12, 0x34, 0x56]
-#create_application(connection, aid)
 #list_applications(connection)
 
+aid1 = [0x12, 0x34, 0x56]
+
+def create_standard_file(connection, aid,file_id, file_size):
+    
+    select_app(connection, aid)
+    authenticate(connection, aid, key_number_zero, master_key)
+    communication_settings = 0x00  # Plain communication ---- TAKES 1 BYTES
+    access_rights = [0x00, 0x00]   # [0x00 0x00] Key 0 required for all operations ***** [0XEE 0xEE]Free access (no auth needed) ---- TAKES 2 BYTES
+
+    byte1 = file_size & 0xFF
+    byte2 = (file_size >> 8) & 0xFF # we are shifting 8 bits from the original value to find the second byte
+    byte3 = (file_size >> 16) & 0xFF # we are shifting 16 bits from the original value to find the third byte
+    file_size_bytes = [byte1, byte2, byte3]   # ---- TAKES 3 BYTES
+
+    #       1Byte  //    //    //    //     //          //                      2Bytes          3BYTES
+    apdu = [0x90, 0xCD, 0x00, 0x00, 0x07, file_id, communication_settings] + access_rights + file_size_bytes + [0x00]
+    data, sw1, sw2 = connection.transmit(apdu)
+    
+    print(f"Create file {file_id} - Status: {sw1:02X} {sw2:02X}")
+    return sw1 == 0x91 and sw2 == 0x00
+
+def write_data_in_standard_file(connection, file_id, offset, data):
+    """
+    Docstring for write_data_in_standard_file
+    
+    :param connection: connection object
+    :param file_id: id where we want to write 
+    :param offset: where to start writing 
+    :param data: data to be written
+    """
+    data_length = len(data)
+    
+    # Offset as 3 bytes (little-endian)
+    offset_bytes = [offset & 0xFF, (offset >> 8) & 0xFF, (offset >> 16) & 0xFF]
+    
+    # Length as 3 bytes (little-endian)
+    length_bytes = [data_length & 0xFF, (data_length >> 8) & 0xFF, (data_length >> 16) & 0xFF]
+    
+    apdu = [0x90, 0x3D, 0x00, 0x00, 7 + data_length, file_id] + offset_bytes + length_bytes + data + [0x00]
+    response, sw1, sw2 = connection.transmit(apdu)
+    
+    print(f"Write to file {file_id} - Status: {sw1:02X} {sw2:02X}")
+    return sw1 == 0x91 and sw2 == 0x00
+
+
+def read_data_in_standard_file(connection, file_id, offset, length):
+    # Offset as 3 bytes
+    offset_bytes = [offset & 0xFF, (offset >> 8) & 0xFF, (offset >> 16) & 0xFF]
+    
+    # Length as 3 bytes (little-endian)
+    length_bytes = [length & 0xFF, (length >> 8) & 0xFF, (length >> 16) & 0xFF]
+    
+    apdu = [0x90, 0xBD, 0x00, 0x00, 0x07, file_id] + offset_bytes + length_bytes + [0x00]
+    data, sw1, sw2 = connection.transmit(apdu)
+    
+    print(f"Read from file {file_id} - Status: {sw1:02X} {sw2:02X}")
+    print(f"Data (hex): {toHexString(data)}")
+    print(f"Data (text): {bytes(data).decode('utf-8', errors='ignore')}")
+    
+    return data
 
 
 
-# Files part
-# 1- select app
-data, sw1, sw2 = select_app(connection, aid)
-print(f"Data: {data} - app {toHexString(aid)} - Status: {sw1:02X} {sw2:02X}")
 
-# auth with app
-authenticate(connection, aid, key_number_zero, master_key)
+list_applications(connection)
+
+#create_application(connection, aid1)
+#create_standard_file(connection, aid1, 0x01, 32)
+
+select_app(connection, aid1)
+list_files(connection)
 
 
+# Write "Hello World" to file 0x01 at offset 0
+data_to_write = list(b"Hello World")
+authenticate(connection, aid1, key_number_zero, master_key)
+#write_data_in_standard_file(connection, 0x01, 0, data_to_write) 
+
+# Read 11 bytes from file 0x01 starting at offset 0
+#authenticate(connection, aid1, key_number_zero, master_key)
+read_data_in_standard_file(connection, 0x01, 0, 11)
+
+
+
+
+
+""" block to auth with master app and delete custom application given aid 
+
+select_app(connection, master_app_id)
 authenticate(connection, master_app_id, key_number_zero, master_key)
-delete_application(connection, aid)
+delete_application(connection, aid1)
+list_applications(connection)
+
+create_application(connection, aid)
+create_standard_file(connection, 0x01, 32)
+list_files(connection)
+"""
