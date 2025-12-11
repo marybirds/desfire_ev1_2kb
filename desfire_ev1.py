@@ -13,7 +13,7 @@ Typical work flow:
 2-Create custom application
 3-Select custom application
 4-Authenticate to custom app
-5-Create file
+5-reate file
 6-write data to file
 """
 
