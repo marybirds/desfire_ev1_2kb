@@ -14,7 +14,7 @@ Typical work flow:
 3-Select custom application
 4-Authenticate to custom app
 5-Create file
-6-rite data to file
+6-write data to file
 """
 
 master_key = bytes([0x00] * 8)
